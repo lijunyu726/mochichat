@@ -1,42 +1,45 @@
 #!/usr/bin/env node
-// peer：团队中心的命令行入口。团队中心没在跑时会自动启动。
+// mochi：团队中心的命令行入口。团队中心没在跑时会自动启动。
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PEER_PORT, TOKEN_FILE } from '../src/hub/paths.mjs';
+import { MOCHI_PORT, TOKEN_FILE } from '../src/hub/paths.mjs';
 
 const HUB = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'hub', 'hub.mjs');
-const BASE = `http://127.0.0.1:${PEER_PORT}`;
-const USAGE = `peer：让 Claude Code、codex、agy 在一个团队群里协作
+const BASE = `http://127.0.0.1:${MOCHI_PORT}`;
+const USAGE = `mochi：让 Claude Code、codex、agy 在一个团队群里协作
 
 团队
-  peer new <团队> [--cwd 目录]            新建团队（工作目录默认是当前目录）
-  peer rm <团队>                          删除团队和它的聊天记录
-  peer status                             所有团队和成员的状态
+  mochi new <团队> [--cwd 目录] [--workspace] [--shared]
+                                          新建团队。工作目录默认是当前目录；--workspace 放进默认工作区（~/mochichat/团队名）。
+                                          目录是 git 仓库时每个成员一个自己的 worktree，--shared 改成共用目录
+  mochi rm <团队>                          删除团队和它的聊天记录
+  mochi status                             所有团队和成员的状态
 成员
-  peer add <团队> <claude|codex|agy> [--name 名字] [--model 模型] [--perm full|readonly|ask]
-  peer kick <团队> <成员>                 移出团队
-  peer set <团队> <成员> [--model 模型] [--perm 权限]
-  peer clear <团队> <成员>                清空这个成员在本群的记忆
-  peer lead <团队> <成员>                 指定主理人
-  peer models <claude|codex|agy>          这种 agent 能选的模型
+  mochi add <团队> <claude|codex|agy> [--name 名字] [--model 模型] [--perm full|readonly|ask]
+  mochi kick <团队> <成员>                 移出团队
+  mochi set <团队> <成员> [--model 模型] [--perm 权限]
+  mochi clear <团队> <成员>                清空这个成员在本群的记忆
+  mochi lead <团队> <成员>                 指定主理人
+  mochi models <claude|codex|agy>          这种 agent 能选的模型
 对话
-  peer say <团队> <消息...> [--no-wait]   发消息并等大家说完；@成员、@all agents、不 @ 则交给主理人
-  peer watch <团队>                       一直看着这个群
-  peer log <团队> [-n 条数]               看聊天记录
-  peer stop <团队>                        打断正在进行的讨论
-  peer continue <团队>                    到轮数上限后再给一批
-  peer rounds <团队> <数字>               自动讨论的轮数上限
-  peer allow|deny <团队> <请求编号>       回答成员的权限请求（权限为 ask 时）
+  mochi say <团队> <消息...> [--no-wait]   发消息并等大家说完；@成员、@all agents、不 @ 则交给主理人
+  mochi watch <团队>                       一直看着这个群
+  mochi log <团队> [-n 条数]               看聊天记录
+  mochi stop <团队>                        打断正在进行的讨论
+  mochi continue <团队>                    到轮数上限后再给一批
+  mochi rounds <团队> <数字>               自动讨论的轮数上限
+  mochi allow|deny <团队> <请求编号>       回答成员的权限请求（权限为 ask 时）
 其他
-  peer start | peer shutdown              启动 / 关闭团队中心`;
+  mochi open                               在浏览器里打开群聊室
+  mochi start | mochi shutdown              启动 / 关闭团队中心`;
 
 const token = () => { try { return readFileSync(TOKEN_FILE, 'utf8').trim(); } catch { return ''; } };
 
 async function api(method, path, data) {
   const r = await fetch(BASE + path, {
-    method, headers: { 'x-peer-token': token(), 'content-type': 'application/json' },
+    method, headers: { 'x-mochi-token': token(), 'content-type': 'application/json' },
     body: data === undefined ? undefined : JSON.stringify(data),
   });
   const o = await r.json();
@@ -55,7 +58,7 @@ async function ensureHub() {
 
 // 读事件流，每个事件调一次 fn；fn 返回 true 就结束。
 async function events(fn, onOpen) {
-  const r = await fetch(`${BASE}/api/events`, { headers: { 'x-peer-token': token() } });
+  const r = await fetch(`${BASE}/api/events`, { headers: { 'x-mochi-token': token() } });
   if (!r.ok) throw new Error('连不上事件流');
   await onOpen?.();
   let buf = '';
@@ -84,7 +87,7 @@ function printAsks(v, shown) {
   for (const a of v.asks) {
     if (shown.has(a.id)) continue;
     shown.add(a.id);
-    console.log(`\n  ? ${a.member} 请求：${a.title}\n    同意：peer allow ${v.name} ${a.id}    拒绝：peer deny ${v.name} ${a.id}`);
+    console.log(`\n  ? ${a.member} 请求：${a.title}\n    同意：mochi allow ${v.name} ${a.id}    拒绝：mochi deny ${v.name} ${a.id}`);
   }
 }
 
@@ -94,6 +97,7 @@ function parse(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--no-wait') opt.noWait = true;
+    else if (a === '--workspace' || a === '--shared') opt[a.slice(2)] = true;
     else if (['--cwd', '--name', '--model', '--perm', '-n'].includes(a)) opt[a.replace(/^-+/, '')] = argv[++i];
     else pos.push(a);
   }
@@ -104,29 +108,36 @@ async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   if (!cmd || cmd === 'help' || cmd === '-h' || cmd === '--help') return console.log(USAGE);
   const { pos, opt } = parse(rest);
-  const need = (i, what) => { if (!pos[i]) throw new Error(`缺少${what}。运行 peer help 看用法`); return pos[i]; };
+  const need = (i, what) => { if (!pos[i]) throw new Error(`缺少${what}。运行 mochi help 看用法`); return pos[i]; };
   const T = () => `/api/teams/${encodeURIComponent(need(0, '团队名'))}`;
   const Mb = () => `${T()}/members/${encodeURIComponent(need(1, '成员名'))}`;
 
   if (cmd === 'shutdown') {
     if (!(await alive())) return console.log('团队中心没有在运行');
     await api('POST', '/api/shutdown');
+    // 等它真的退出再返回：否则紧接着的下一条命令会连上这个正在关闭的团队中心，然后中途断开。
+    for (let i = 0; i < 50 && await alive(); i++) await new Promise((r) => setTimeout(r, 100));
     return console.log('团队中心已关闭');
   }
   await ensureHub();
 
   switch (cmd) {
     case 'start': return console.log(`团队中心在运行：${BASE}`);
+    case 'open': {
+      // 口令放在 # 后面：浏览器不会把这一段发给服务器，也不会进访问记录。
+      spawn('open', [`${BASE}/#token=${token()}`], { detached: true, stdio: 'ignore' }).unref();
+      return console.log('已在浏览器里打开群聊室');
+    }
     case 'status': {
       const { teams } = await api('GET', '/api/state');
-      if (!teams.length) return console.log('还没有团队。peer new <团队名> 建一个');
+      if (!teams.length) return console.log('还没有团队。mochi new <团队名> 建一个');
       for (const t of teams) {
         console.log(`${t.name}　${t.cwd}　上限 ${t.maxRounds} 轮${t.paused ? '　已到上限，等 continue' : ''}`);
         for (const m of t.members) console.log(`  ${m.name === t.lead ? '★' : ' '} ${m.name}　${m.kind}　${m.model ?? '默认模型'}　${m.permission}　${m.status === 'running' ? '发言中' : t.queue.includes(m.name) ? '排队' : '空闲'}`);
       }
       return;
     }
-    case 'new': { const { team } = await api('POST', '/api/teams', { name: need(0, '团队名'), cwd: resolve(opt.cwd ?? process.cwd()) }); return console.log(`已建团队 ${team.name}，工作目录 ${team.cwd}`); }
+    case 'new': { const { team } = await api('POST', '/api/teams', { name: need(0, '团队名'), cwd: opt.workspace ? undefined : resolve(opt.cwd ?? process.cwd()), isolation: opt.shared ? 'shared' : undefined }); return console.log(`已建团队 ${team.name}，工作目录 ${team.cwd}（${team.isolation === 'worktree' ? '每个成员一个自己的 worktree' : '成员共用这个目录'}）`); }
     case 'rm': await api('DELETE', T()); return console.log(`已删除团队 ${pos[0]}`);
     case 'add': await api('POST', `${T()}/members`, { kind: need(1, ' agent 类型'), name: opt.name, model: opt.model, permission: opt.perm }); return console.log(`${opt.name ?? pos[1]} 已加入 ${pos[0]}`);
     case 'kick': await api('DELETE', Mb()); return console.log(`${pos[1]} 已移出 ${pos[0]}`);
@@ -153,7 +164,7 @@ async function main() {
     case 'say': case 'watch': {
       const { team } = await api('GET', T());
       const text = pos.slice(1).join(' ');
-      if (cmd === 'say' && !text) throw new Error('要说什么？peer say <团队> <消息>');
+      if (cmd === 'say' && !text) throw new Error('要说什么？mochi say <团队> <消息>');
       if (cmd === 'say' && opt.noWait) { await api('POST', `${T()}/messages`, { text }); return; }
       const shown = new Set();
       let posted = cmd === 'watch';
@@ -175,8 +186,8 @@ async function main() {
       });
       return;
     }
-    default: throw new Error(`不认识的命令 ${cmd}。运行 peer help 看用法`);
+    default: throw new Error(`不认识的命令 ${cmd}。运行 mochi help 看用法`);
   }
 }
 
-main().then(() => process.exit(0), (e) => { console.error(`peer：${e.message}`); process.exit(1); });
+main().then(() => process.exit(0), (e) => { console.error(`mochi：${e.message}`); process.exit(1); });

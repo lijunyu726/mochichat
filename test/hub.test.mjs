@@ -1,29 +1,29 @@
-// 团队中心的测试：三种成员都用假 agent，不调用模型。每个测试一个独立的 PEER_HOME、端口和团队中心。
+// 团队中心的测试：三种成员都用假 agent，不调用模型。每个测试一个独立的 MOCHI_HOME、端口和团队中心。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { spawn, execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 
-const PEER = fileURLToPath(new URL('../bin/peer.mjs', import.meta.url));
+const MOCHI = fileURLToPath(new URL('../bin/mochi.mjs', import.meta.url));
 const FAKE = fileURLToPath(new URL('./fake-agent.mjs', import.meta.url));
 let nextPort = 21000 + Math.floor(Math.random() * 20000);
 
 function hub(t) {
-  const home = mkdtempSync('/tmp/peer-');
+  const home = mkdtempSync('/tmp/mochi-');
   const port = nextPort++;
-  const env = { ...process.env, PEER_HOME: home, PEER_PORT: String(port), PEER_CLAUDE_BIN: FAKE, PEER_CODEX_BIN: FAKE, PEER_AGY_BIN: FAKE };
+  const env = { ...process.env, MOCHI_HOME: home, MOCHI_WORKSPACE: join(home, 'workspace'), MOCHI_PORT: String(port), MOCHI_CLAUDE_BIN: FAKE, MOCHI_CODEX_BIN: FAKE, MOCHI_AGY_BIN: FAKE };
   const run = (...args) => new Promise((resolve) => {
-    const child = spawn(process.execPath, [PEER, ...args], { env, cwd: home, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [MOCHI, ...args], { env, cwd: home, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '', stderr = '';
     child.stdout.on('data', (d) => { stdout += d; });
     child.stderr.on('data', (d) => { stderr += d; });
     child.on('close', (code) => resolve({ code, stdout: stdout.trim(), stderr: stderr.trim() }));
   });
-  const ok = async (...args) => { const r = await run(...args); assert.equal(r.code, 0, `peer ${args.join(' ')} 失败：${r.stderr}`); return r.stdout; };
+  const ok = async (...args) => { const r = await run(...args); assert.equal(r.code, 0, `mochi ${args.join(' ')} 失败：${r.stderr}`); return r.stdout; };
   const api = async (method, path, data) => {
-    const r = await fetch(`http://127.0.0.1:${port}${path}`, { method, headers: { 'x-peer-token': readFileSync(join(home, 'token'), 'utf8').trim() }, body: data && JSON.stringify(data) });
+    const r = await fetch(`http://127.0.0.1:${port}${path}`, { method, headers: { 'x-mochi-token': readFileSync(join(home, 'token'), 'utf8').trim() }, body: data && JSON.stringify(data) });
     return r.json();
   };
   t.after(async () => { await run('shutdown'); rmSync(home, { recursive: true, force: true }); });
@@ -203,6 +203,81 @@ test('没有口令或 Host 不是本机的请求被拒绝', async (t) => {
   await h.ok('new', '店序');
   const base = `http://127.0.0.1:${h.port}/api/state`;
   assert.equal((await fetch(base)).status, 401);
-  assert.equal((await fetch(base, { headers: { 'x-peer-token': 'x'.repeat(48) } })).status, 401);
+  assert.equal((await fetch(base, { headers: { 'x-mochi-token': 'x'.repeat(48) } })).status, 401);
   assert.equal((await h.api('GET', '/api/state')).ok, true);
+});
+
+test('工作目录是 git 仓库时每个成员一个自己的 worktree；不是仓库就共用；不给目录放进默认工作区', async (t) => {
+  const h = hub(t);
+  const repo = join(h.home, 'repo');
+  const git = (...a) => execFileSync('git', ['-C', repo, ...a], { encoding: 'utf8' }).trim();
+  mkdirSync(join(repo, 'sub'), { recursive: true });
+  writeFileSync(join(repo, 'sub', 'a.txt'), 'a\n');
+  execFileSync('git', ['init', '-q', repo]);
+  git('add', '.');
+  git('-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-qm', 'init');
+
+  // 团队的工作目录是仓库里的子目录：成员待在自己 worktree 的同一个子目录里
+  await h.ok('new', '隔离', '--cwd', join(repo, 'sub'));
+  await h.ok('add', '隔离', 'claude');
+  await h.ok('add', '隔离', 'codex');
+  const team = await h.team('隔离');
+  assert.equal(team.isolation, 'worktree');
+  const [a, b] = team.members;
+  assert.notEqual(a.dir, b.dir);
+  assert.equal(a.branch, `mochi/${team.id}/claude`);
+  assert.equal(readFileSync(join(a.dir, 'a.txt'), 'utf8'), 'a\n');
+  assert.match(git('branch', '--list', 'mochi/*'), /codex/);
+  await h.ok('say', '隔离', '@claude', '看一下');
+  const first = h.log().at(-1);
+  assert.equal(first.cwd, realpathSync(a.dir), '成员进程在自己的 worktree 里运行');
+  assert.match(first.prompt, new RegExp(`你的分支是 mochi/${team.id}/claude`));
+
+  // 有没提交的改动：移出时留着目录；干净的：移出时收掉。分支都保留
+  writeFileSync(join(a.dir, 'draft.txt'), '没提交\n');
+  await h.ok('kick', '隔离', 'claude');
+  await h.ok('kick', '隔离', 'codex');
+  assert.ok(existsSync(join(a.dir, 'draft.txt')), '没提交的改动不能丢');
+  assert.ok(!existsSync(b.dir));
+  assert.match(h.last(), /codex 被移出了团队，它的分支 mochi\//);
+  assert.match(git('branch', '--list', 'mochi/*'), /claude[\s\S]*codex/);
+
+  // 不是 git 仓库：共用；硬要 worktree 报错
+  const plain = (await h.api('POST', '/api/teams', { name: '默认' })).team;
+  assert.equal(plain.cwd, join(h.home, 'workspace', '默认'));
+  assert.equal(plain.isolation, 'shared');
+  const bad = await h.api('POST', '/api/teams', { name: '不行', cwd: h.home, isolation: 'worktree' });
+  assert.match(bad.error, /不是有提交记录的 git 仓库/);
+  const shared = (await h.api('POST', '/api/teams', { name: '共用', cwd: repo, isolation: 'shared' })).team;
+  assert.equal(shared.isolation, 'shared');
+});
+
+test('全局设置只影响新团队和新成员；团队说明进群规，改了以后成员下一轮补看', async (t) => {
+  const h = hub(t);
+  await h.ok('status');
+  const bad = await h.api('PATCH', '/api/settings', { permission: 'root' });
+  assert.match(bad.error, /权限只能是/);
+  const ws = join(h.home, 'ws2');
+  const { settings } = await h.api('PATCH', '/api/settings', { workspace: ws, permission: 'readonly', maxRounds: 3, models: { codex: 'm-x' } });
+  assert.deepEqual(settings, { workspace: ws, permission: 'readonly', maxRounds: 3, models: { codex: 'm-x' } });
+  const team = (await h.api('POST', '/api/teams', { name: '新队' })).team;
+  assert.equal(team.cwd, join(ws, '新队'));
+  assert.equal(team.maxRounds, 3);
+  await h.ok('add', '新队', 'codex');
+  await h.ok('add', '新队', 'claude', '--perm', 'full');
+  const m = (await h.team('新队')).members;
+  assert.deepEqual([m[0].permission, m[0].model, m[1].permission, m[1].model], ['readonly', 'm-x', 'full', null]);
+
+  await h.api('PATCH', `/api/teams/${team.id}`, { brief: '回答用中文', name: '改名队' });
+  await h.ok('say', '改名队', '@codex', '你好');
+  assert.match(h.log().at(-1).prompt, /\[团队说明\][\s\S]*回答用中文/);
+  await h.api('PATCH', `/api/teams/${team.id}`, { brief: '先跑测试' });
+  await h.ok('say', '改名队', '@codex', '再来');
+  assert.match(h.log().at(-1).prompt, /\[团队说明更新\][\s\S]*先跑测试/);
+  await h.ok('say', '改名队', '@codex', '第三次');
+  assert.doesNotMatch(h.log().at(-1).prompt, /团队说明/, '说明只补看一次');
+  // 重启后设置还在
+  await h.ok('shutdown');
+  assert.equal((await h.run('status')).code, 0);
+  assert.equal((await h.api('GET', '/api/settings')).settings.maxRounds, 3);
 });

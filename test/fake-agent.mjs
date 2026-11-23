@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // 测试用的假 agent：按启动参数扮演 agy（acp）、codex（app-server）或 Claude Code（-p），不调用任何模型。
-// 回答按 PEER_HOME/fake-script.json 里 { 成员名: [第 1 次的回答, 第 2 次的回答…] } 依次给，没有就答“名字#次数”。
+// 回答按 MOCHI_HOME/fake-script.json 里 { 成员名: [第 1 次的回答, 第 2 次的回答…] } 依次给，没有就答“名字#次数”。
 // 回答里的特殊词：SLOW 一直不结束直到被取消；PERM 先申请一次权限，再答 perm=allow / perm=deny。
-// 每次收到的输入记在 PEER_HOME/fake-log.jsonl；会话状态记在 fake-state.json，进程重启后能恢复。
+// 每次收到的输入记在 MOCHI_HOME/fake-log.jsonl；会话状态记在 fake-state.json，进程重启后能恢复。
 import { createInterface } from 'node:readline';
 import { readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-const HOME = process.env.PEER_HOME;
+const HOME = process.env.MOCHI_HOME;
 const STATE = join(HOME, 'fake-state.json');
 const load = () => { try { return JSON.parse(readFileSync(STATE, 'utf8')); } catch { return { sessions: {}, counts: {} }; } };
 const save = (s) => writeFileSync(STATE, JSON.stringify(s));
@@ -24,7 +24,7 @@ function next(session, prompt, extra) {
   rec.name ??= prompt.match(/名字是 (\S+?)。/)?.[1] ?? '?';
   const n = (s.counts[rec.name] = (s.counts[rec.name] ?? 0) + 1);
   save(s);
-  appendFileSync(join(HOME, 'fake-log.jsonl'), JSON.stringify({ kind: mode, name: rec.name, session, prompt, ...extra }) + '\n');
+  appendFileSync(join(HOME, 'fake-log.jsonl'), JSON.stringify({ kind: mode, name: rec.name, session, prompt, cwd: process.cwd(), ...extra }) + '\n');
   let script = {};
   try { script = JSON.parse(readFileSync(join(HOME, 'fake-script.json'), 'utf8')); } catch { /* 没有脚本 */ }
   return script[rec.name]?.[n - 1] ?? `${rec.name}#${n}`;

@@ -1,28 +1,41 @@
-# claude-agy-bridge
+# mochichat
 
 本机的两件工具，放在同一个仓库里：
 
-1. **`peer`：agent 团队中心**。把 Claude Code、codex、agy 拉进一个团队群，像群聊一样协作：可以建多个团队、随时加人踢人、给每个成员选模型和权限。
+1. **mochichat（命令 `mochi`）：agent 团队中心**。把 Claude Code、codex、agy 拉进一个团队群，像群聊一样协作：可以建多个团队、随时加人踢人、给每个成员选模型和权限。
 2. **`agyc`：Claude Code 与 agy 的对话桥**。一个常驻程序握着 `agy acp`，让当前这个 Claude Code 会话和 agy 多轮对话（见本文后半部分）。
 
-## peer：团队中心
+## mochichat：团队中心（命令 `mochi`）
 
 ### 能做什么
 
-- **团队和成员**：`peer new` 建团队（绑定一个工作目录），`peer add / kick` 加人、踢人。成员类型：`claude`（Claude Code）、`codex`、`agy`；同一种可以加多个（用 `--name` 起不同的名字）。
+- **团队和成员**：`mochi new` 建团队（绑定一个工作目录），`mochi add / kick` 加人、踢人。成员类型：`claude`（Claude Code）、`codex`、`agy`；同一种可以加多个（用 `--name` 起不同的名字）。
 - **每个群各有记忆**：同一种 agent 进了多个群，每个群是一个独立会话，互相不知道对方聊过什么。团队中心重启后接回原来的会话。
 - **@ 的规则**：`@成员名` 发给它；`@all agents` 发给全体（主理人最后说，并综合大家的回答）；谁也不 @ 就交给主理人，由它自己回答或 @ 别的成员。
-- **主理人**：每个团队一个，默认是第一个 Claude（没有 Claude 就是第一个成员），`peer lead` 可改。
+- **工作目录和 worktree**：`mochi new` 默认用当前目录；`--workspace`（网页里不填目录）放进默认工作区 `~/mochichat/<团队名>/`。目录是有提交记录的 git 仓库时，每个成员有自己的 worktree（在 `~/.mochichat/worktrees/<团队编号>/<成员名>`）和分支（`mochi/<团队编号>/<成员名>`），互相看不到对方没提交的改动；`--shared`（网页里勾“成员共用这个目录”）改成大家共用一个目录。不是 git 仓库的目录只能共用。移出成员时：worktree 干净就收掉，有没提交的改动就留在原处；分支始终保留，不会自动合并或推送。
+- **主理人**：每个团队一个，默认是第一个 Claude（没有 Claude 就是第一个成员），`mochi lead` 可改。
 - **交回**：成员 A @ 了成员 B，B 回答后话自动交回 A，由 A 给出结论。
-- **轮数上限**：成员每说一次算一轮，你发一条消息后最多自动进行 8 轮（`peer rounds` 可改），到了就停下，发 `/continue` 或“继续”再给一批。
-- **权限**：默认 `full`（全部放行，等同 Claude Code 的 bypass permissions）；`readonly` 不能改文件、不能跑命令；`ask` 每次改动先问你（`peer allow / deny`）。按成员单独设置。
-- **模型**：`peer models <类型>` 列出可选模型，`peer set … --model` 或 `/model` 切换，下一轮生效，不丢上下文。
-- **打断**：`peer stop <团队>`。
-- **群里的 / 命令**（在 `peer say` 的消息里用）：`/add 类型 [名字]`、`/kick 成员`、`/model 成员 模型`、`/permissions 成员 full|readonly|ask`、`/clear 成员`、`/lead 成员`、`/rounds 数字`、`/stop`、`/continue`。
+- **轮数上限**：成员每说一次算一轮，你发一条消息后最多自动进行 8 轮（`mochi rounds` 可改），到了就停下，发 `/continue` 或“继续”再给一批。
+- **权限**：默认 `full`（全部放行，等同 Claude Code 的 bypass permissions）；`readonly` 不能改文件、不能跑命令；`ask` 每次改动先问你（`mochi allow / deny`）。按成员单独设置。
+- **模型**：`mochi models <类型>` 列出可选模型，`mochi set … --model` 或 `/model` 切换，下一轮生效，不丢上下文。
+- **打断**：`mochi stop <团队>`。
+- **群里的 / 命令**（在 `mochi say` 的消息里用）：`/add 类型 [名字]`、`/kick 成员`、`/model 成员 模型`、`/permissions 成员 full|readonly|ask`、`/clear 成员`、`/lead 成员`、`/rounds 数字`、`/stop`、`/continue`。
+
+### 群聊室网页
+
+`mochi open` 在浏览器里打开群聊室（`http://127.0.0.1:4517`），和命令行用的是同一个团队中心、同一份数据。
+
+- 左边是团队，中间是对话（自己的消息在右边），右边是成员。
+- 点成员卡片可以改权限、换模型、设为主理人、清空记忆、移出团队；成员申请权限时，卡片上出现“同意 / 拒绝”。
+- 输入框里打 `@` 选成员或 `@all agents`；打 `/` 出命令菜单，先 `@成员` 再打 `/` 就是对这个成员的命令。回车发送，Shift+回车换行。
+- 左下角“设置”：默认工作区、新成员的默认权限、每种 agent 的默认模型、默认轮数上限（只影响以后新建的团队和新加的成员），以及这台浏览器上的外观（跟随系统 / 浅色 / 深色）和发送快捷键。全局设置存在 `~/.mochichat/settings.json`。
+- 右下角“团队名字和说明”：改团队名；写一段团队说明，每个成员都会看到，改了之后成员在下一次发言前补看。
+- 页面必须从 `mochi open` 进：它把口令放在地址的 `#` 后面交给页面，页面存进浏览器本地并立刻从地址里抹掉。直接输网址会提示去运行 `mochi open`。
+- worktree 只在假成员上测过（各自的目录、分支、移出时的保留规则）；真实成员会不会按群规提交并告诉别人分支名，**未验证**。
+- 已验证：用假成员在无头浏览器里点通了发消息、`@all agents`、权限请求的同意、打断、改权限、拉人。**未验证**：接真实的 Claude / codex / agy 时页面的表现（流式文字、长回答、Markdown 排版）；窄屏布局只写了样式，没有实际看过。
 
 ### 现在做不到的
 
-- **群聊室网页还没有做**，目前只有命令行 `peer`。HTTP 接口已经齐了（见 AGENTS.md），网页会接在同一个服务上。
 - **成员是各自的无界面进程**，不是你正在终端里用的那个会话；它们读同一份配置（CLAUDE.md、MCP、技能等）。
 - **同一时刻只有一个成员在说话**，其他人排队。
 - **agent 自己的斜杠命令（如 `/compact`）不转发**，会被当成普通文字。
@@ -32,19 +45,19 @@
 ### 用法
 
 ```sh
-peer new 店序 --cwd /Volumes/S690/codes/shopflow
-peer add 店序 claude
-peer add 店序 codex
-peer add 店序 agy --model gemini-3.8-flash-high
-peer say 店序 "登录用 session 还是 JWT？"          # 交给主理人
-peer say 店序 "@codex 跑一下 auth 的测试"
-peer say 店序 "@all agents 各自说说风险"
-peer status
-peer log 店序 -n 50
-peer help
+mochi new 店序 --cwd ~/code/shopflow
+mochi add 店序 claude
+mochi add 店序 codex
+mochi add 店序 agy --model gemini-3.8-flash-high
+mochi say 店序 "登录用 session 还是 JWT？"          # 交给主理人
+mochi say 店序 "@codex 跑一下 auth 的测试"
+mochi say 店序 "@all agents 各自说说风险"
+mochi status
+mochi log 店序 -n 50
+mochi help
 ```
 
-数据在 `~/.peer/`（团队、聊天记录、口令）。环境变量：`PEER_HOME`、`PEER_PORT`（默认 4517）、`PEER_CLAUDE_BIN` / `PEER_CODEX_BIN` / `PEER_AGY_BIN`。
+数据在 `~/.mochichat/`（团队、聊天记录、口令、成员的 worktree）。环境变量：`MOCHI_HOME`、`MOCHI_WORKSPACE`（默认工作区，默认 `~/mochichat`）、`MOCHI_PORT`（默认 4517）、`MOCHI_CLAUDE_BIN` / `MOCHI_CODEX_BIN` / `MOCHI_AGY_BIN`。
 
 ## agyc：Claude Code 与 agy 的对话桥
 
@@ -73,9 +86,10 @@ peer help
 ### 安装
 
 ```bash
-ln -s /Volumes/S690/codes/claude-agy-bridge/bin/agyc.mjs ~/.local/bin/agyc
-ln -s /Volumes/S690/codes/claude-agy-bridge/bin/peer.mjs ~/.local/bin/peer
-ln -s /Volumes/S690/codes/claude-agy-bridge/skill/agy ~/.claude/skills/agy   # 让 Claude Code 知道怎么用
+# 在仓库目录里运行
+ln -s "$PWD"/bin/agyc.mjs ~/.local/bin/agyc
+ln -s "$PWD"/bin/mochi.mjs ~/.local/bin/mochi
+ln -s "$PWD"/skill/agy ~/.claude/skills/agy   # 让 Claude Code 知道怎么用
 ```
 
 ### 使用

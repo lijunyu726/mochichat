@@ -7,9 +7,9 @@ import { createInterface } from 'node:readline';
 import { AcpClient } from '../acp.mjs';
 
 const BIN = {
-  claude: process.env.PEER_CLAUDE_BIN || 'claude',
-  codex: process.env.PEER_CODEX_BIN || 'codex',
-  agy: process.env.PEER_AGY_BIN || 'agy',
+  claude: process.env.MOCHI_CLAUDE_BIN || 'claude',
+  codex: process.env.MOCHI_CODEX_BIN || 'codex',
+  agy: process.env.MOCHI_AGY_BIN || 'agy',
 };
 export const KINDS = ['claude', 'codex', 'agy'];
 export const PERMISSIONS = ['full', 'readonly', 'ask'];
@@ -62,7 +62,7 @@ class AgyHost extends Host {
     return c.call('initialize', {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
-      clientInfo: { name: 'peer', version: '0.2.0' },
+      clientInfo: { name: 'mochi', version: '0.2.0' },
     });
   }
 }
@@ -156,7 +156,7 @@ class CodexHost extends Host {
     return c;
   }
   async handshake(c) {
-    await c.call('initialize', { clientInfo: { name: 'peer', title: 'peer', version: '0.2.0' }, capabilities: null });
+    await c.call('initialize', { clientInfo: { name: 'mochi', title: 'mochi', version: '0.2.0' }, capabilities: null });
     c.notify('initialized', {});
   }
 }

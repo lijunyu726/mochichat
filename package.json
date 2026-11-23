@@ -1,12 +1,12 @@
 {
-  "name": "claude-agy-bridge",
+  "name": "mochichat",
   "version": "0.2.0",
-  "description": "本机的 agent 团队中心（peer：Claude Code、codex、agy 群聊协作）和 Claude Code 与 agy 的对话桥（agyc）",
+  "description": "本机的 agent 团队中心（mochichat，命令 mochi：Claude Code、codex、agy 群聊协作）和 Claude Code 与 agy 的对话桥（agyc）",
   "type": "module",
   "private": true,
   "bin": {
     "agyc": "bin/agyc.mjs",
-    "peer": "bin/peer.mjs"
+    "mochi": "bin/mochi.mjs"
   },
   "scripts": {
     "test": "node --test --test-timeout=120000 test/bridge.test.mjs test/hub.test.mjs"
