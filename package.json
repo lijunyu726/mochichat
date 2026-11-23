@@ -1,10 +1,17 @@
 {
   "name": "claude-agy-bridge",
-  "version": "0.1.0",
-  "description": "让 Claude Code 和 Antigravity CLI（agy）多轮对话的本机小桥",
+  "version": "0.2.0",
+  "description": "本机的 agent 团队中心（peer：Claude Code、codex、agy 群聊协作）和 Claude Code 与 agy 的对话桥（agyc）",
   "type": "module",
   "private": true,
-  "bin": { "agyc": "bin/agyc.mjs" },
-  "scripts": { "test": "node --test test/bridge.test.mjs" },
-  "engines": { "node": ">=20" }
+  "bin": {
+    "agyc": "bin/agyc.mjs",
+    "peer": "bin/peer.mjs"
+  },
+  "scripts": {
+    "test": "node --test --test-timeout=120000 test/bridge.test.mjs test/hub.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
 }
